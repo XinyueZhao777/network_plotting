@@ -1,0 +1,641 @@
+---
+title: "networks"
+output: html_document
+Author: Xinyue Zhao
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(magrittr)
+library(dplyr)
+library(readxl)
+library(igraph)
+library(tidyverse)
+library(visNetwork)
+library(networkD3)
+library(ggraph)
+library(ggrepel)
+library(countrycode)
+library(tidygraph)
+library(rgeos)
+library(rworldmap)
+library(openxlsx)
+library(assertthat)
+library(purrr)
+library(ggplot2)
+library(ggmap)
+```
+
+```{r}
+# Clear your workspace by removing all objects returned by ls():
+rm(list = ls()) 
+# Set the working directory to the folder containing the workshop files:
+#setwd("/Users/fil/Dropbox/Repo-haircut/Revision/relationship plots/") 
+netw <- read.csv("/Users/hedwig/Dropbox/trade_payment_flows/data/DOT_2021Q3_11-11-2021\ 19-20-29-72_timeSeries.csv", header=T,stringsAsFactors = F, na.strings = c("", "NA", "e"))#due to change in path
+# what does e means?
+
+netw<-data.frame(netw)
+netw[is.na(netw)] = 0
+
+# pick 2020 only
+net2020 <- netw[,c(1:2,4:7,80)] 
+
+net2020_wide <- net2020 %>%
+  filter(Attribute == "Value")%>%
+  pivot_wider(names_from = Indicator.Code, values_from = X2020)
+
+net2020_wide[is.na(net2020_wide)] = 0
+
+net2020_long <- net2020_wide%>%
+  mutate(import = TMG_CIF_USD + TMG_FOB_USD,
+         export = TXG_FOB_USD)%>%
+  pivot_longer(cols=10:11, 
+               names_to="direction", 
+               values_to = "size")
+
+```
+
+```{r}
+#adjust china
+net2020_long[net2020_long == "China, P.R.: Hong Kong"] <- "China"
+net2020_long[net2020_long == "China, P.R.: Macao"] <- "China"
+net2020_long[net2020_long == "China, P.R.: Mainland"] <- "China"
+net2020_long[net2020_long == "Taiwan Province of China"] <- "China"
+net2020_long["Country.Code"][net2020_long["Country.Name"] == "China"] <- as.integer(924) 
+net2020_long["Counterpart.Country.Code"][net2020_long["Counterpart.Country.Name"] == "China"] <- as.integer(924) 
+#no loops
+net2020_long <- subset(net2020_long, !(Country.Name=="China" & Counterpart.Country.Name == "China"))
+
+```
+
+# continent plot
+```{r}
+#credit to Jane Chen
+net2020_long_clean <- net2020_long %>%
+  filter(!(Country.Name %in% c("Euro Area", "Middle East and Central Asia not specified", "Emerging and Developing Asia", "Asia not specified", "Sub-Saharan Africa", "Africa", "Africa not specified", "Emerging and Developing Europe", "Middle East", "Middle East and Central Asia", "World", "Emerging Market and Developing Economies by Source of Export Earnings: Fuel", "Advanced Economies", "Emerging and Developing Economies","Emerging Market and Developing Economies by Source of Export Earnings: Nonfuel", "Western Hemisphere", "Western Hemisphere not specified", "CIS", "Countries & Areas not specified", "Special Categories", "Other Countries not included elsewhere", "Europe not specified", "European Union")))%>%
+  filter(!(Counterpart.Country.Name %in% c("Euro Area", "Middle East and Central Asia not specified", "Emerging and Developing Asia", "Asia not specified", "Sub-Saharan Africa", "Africa", "Africa not specified", "Emerging and Developing Europe", "Middle East", "Middle East and Central Asia", "World", "Emerging Market and Developing Economies by Source of Export Earnings: Fuel", "Advanced Economies", "Emerging and Developing Economies","Emerging Market and Developing Economies by Source of Export Earnings: Nonfuel", "Western Hemisphere", "Western Hemisphere not specified", "CIS", "Countries & Areas not specified", "Special Categories", "Other Countries not included elsewhere", "Europe not specified", "European Union")))
+  
+net2020_long_clean$continent <- countrycode(sourcevar = net2020_long_clean[["Country.Name"]]
+                                      , origin = "country.name",
+                                      destination = "continent")
+
+net2020_long_clean$counter.continent <- countrycode(sourcevar = net2020_long_clean[["Counterpart.Country.Name"]]
+                                      , origin = "country.name",
+                                      destination = "continent")
+
+```
+
+```{r}
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Aruba, Kingdom of the Netherlands"] <- "Americas"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Aruba, Kingdom of the Netherlands"] <- "Americas"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Belgium-Luxembourg"] <- "Europe"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Belgium-Luxembourg"] <- "Europe"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Curaçao, Kingdom of the Netherlands"] <- "Europe"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Curaçao, Kingdom of the Netherlands"] <- "Europe"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Czechoslovakia"] <- "Europe"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Czechoslovakia"] <- "Europe"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Eastern Germany"] <- "Europe"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Eastern Germany"] <- "Europe"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Kosovo, Rep. of"] <- "Europe"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Kosovo, Rep. of"] <- "Europe"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Sint Maarten, Kingdom of the Netherlands"] <- "Europe"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Sint Maarten, Kingdom of the Netherlands"] <- "Europe"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Serbia and Montenegro"] <- "Europe"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Serbia and Montenegro"] <- "Europe"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Yugoslavia"] <- "Europe"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Yugoslavia"] <- "Europe"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Yemen, People's Dem. Rep. of"] <- "Asia"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Yemen, People's Dem. Rep. of"] <- "Asia"
+
+net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Yemen Arab Rep."] <- "Asia"
+net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Yemen Arab Rep."] <- "Asia"
+
+EasternEurope <- c("Belarus, Rep. of", "Bulgaria", "Czech Rep.", "Hungary", "Poland, Rep. of", "Moldova, Rep. of", "Romania", "Russian Federation", "Czechoslovakia", "Ukraine")
+
+for (i in EasternEurope){
+  net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == i] <- "Eastern Europe"
+  net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == i] <- "Eastern Europe"
+}
+
+net2020_long_clean["continent"][net2020_long_clean["continent"] == "Europe"] <- "Europe(excluding Eastern Europe)"
+net2020_long_clean["counter.continent"][net2020_long_clean["counter.continent"] == "Europe"] <- "Europe(excluding Eastern Europe)"
+
+NorthernAmerica <- c("Bermuda", "Canada", "Greenland", "United States")
+for (j in NorthernAmerica){
+  net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == j] <- "North America"
+  net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == j] <- "North America"
+}
+
+net2020_long_clean["continent"][net2020_long_clean["continent"] == "Americas"] <- "Americas(excluding North America)"
+net2020_long_clean["counter.continent"][net2020_long_clean["counter.continent"] == "Americas"] <- "Americas(excluding North America)"
+```
+
+```{r}
+sources <- net2020_long_clean %>%
+  select(Country.Code, Country.Name, continent)%>%
+  distinct(Country.Code, .keep_all = TRUE) %>%
+  rename(id = Country.Code)
+destinations <- net2020_long_clean %>%
+  select(Counterpart.Country.Code, Counterpart.Country.Name, counter.continent)%>%
+  distinct(Counterpart.Country.Code, .keep_all = TRUE) %>%
+  rename(id = Counterpart.Country.Code)
+nodes <- full_join(sources, destinations, by = "id")%>%
+  mutate(countryname = ifelse(is.na(Country.Name), Counterpart.Country.Name, Country.Name))%>%
+  select(id, countryname, continent)
+  
+nodes_mean <- net2020_long_clean %>%
+  group_by(Country.Name)%>%
+  summarise(sum_ex_im = sum(size))%>%
+  mutate(percent = quantile(sum_ex_im, 0.5))%>%
+  filter(sum_ex_im > percent)%>%
+  rename(countryname = Country.Name)%>%
+  left_join(nodes, by= "countryname")
+  
+```
+
+```{r}
+# for each country, sum up their imports and exports
+edges_mean <- net2020_long_clean %>%
+  mutate(from = ifelse(direction == "import", Counterpart.Country.Code, Country.Code), to = ifelse(direction == "import", Country.Code, Counterpart.Country.Code))%>%
+  select(from, to, size)%>%
+  group_by(from, to)%>%
+  mutate(ave_ex_im = ave(size))
+
+
+sources <- net2020_long_clean %>%
+  select(Country.Code, Country.Name, continent)%>%
+  distinct(Country.Code, .keep_all = TRUE) %>%
+  rename(id = Country.Code)
+
+
+destinations <- net2020_long_clean %>%
+  select(Counterpart.Country.Code, Counterpart.Country.Name, counter.continent)%>%
+  distinct(Counterpart.Country.Code, .keep_all = TRUE) %>%
+  rename(id = Counterpart.Country.Code)
+
+# nodes for each country
+nodes <- full_join(sources, destinations, by = "id")%>%
+  mutate(countryname = ifelse(is.na(Country.Name), Counterpart.Country.Name, Country.Name))%>%
+  select(id, countryname, continent)
+
+nodes[nodes == "Netherlands, The"] <- "Netherlands"
+
+```
+
+
+```{r}
+#credit to Jane Chen
+edges_ex_continent <- net2020_long_clean %>%
+  filter(direction == "export")%>%
+  group_by(continent, counter.continent) %>% 
+  summarise(Size = sum(size))%>%
+  subset(!(continent==counter.continent))%>%
+  rename(size=Size,
+         from = continent,
+         to = counter.continent)%>%
+  mutate(width = 1.6*size/10^11)
+
+nodes_ex_continent <- edges_ex_continent%>%
+  group_by(from)%>%
+  summarise(value = sum(width))%>%
+  rename(id = from)%>%
+  mutate(font.size = rep(15, times = 7))
+
+plot<- visNetwork(nodes_ex_continent, edges_ex_continent) %>% 
+  #visIgraphLayout(layout = "layout_with_sugiyama") %>%
+  visIgraphLayout(layout = "layout_in_circle") %>%
+  visEdges(
+    shadow = FALSE,
+    arrows = list(middle = list(enabled = TRUE, scaleFactor = 0.5)),
+    smooth = T,
+    color = list(color = "grey", highlight = "red")
+  )%>%
+  visNodes(
+    shape = "dot",
+    shadow = list(enabled = TRUE, size = 10),
+    color = list(
+      background = "red",
+      border = "gray80",
+      highlight = "blue"
+    ),
+    font = list(color="black", size = 2)
+  ) %>%
+  visOptions(highlightNearest = TRUE)
+```
+
+
+
+# top plot
+```{r}
+edges_ex <- net2020_long_clean %>%
+  mutate(from = ifelse(direction == "import", Counterpart.Country.Code, Country.Code), to = ifelse(direction == "import", Country.Code, Counterpart.Country.Code))%>%
+  filter(direction == "export")%>%
+  group_by(from, to)%>%
+  summarise(size = sum(size))
+
+edges_im <- net2020_long_clean %>%
+  mutate(from = ifelse(direction == "import", Counterpart.Country.Code, Country.Code), to = ifelse(direction == "import", Country.Code, Counterpart.Country.Code))%>%
+  filter(direction == "import")%>%
+  group_by(from, to)%>%
+  summarise(size = sum(size))
+
+top_ex_list <- edges_ex%>%
+  group_by(from)%>%
+  summarise(sum_ex = sum(size))%>%
+  arrange(desc(sum_ex))%>%
+  slice_head(n=5)%>%
+  rename(id = from, sum = sum_ex)
+
+top_im_list <- edges_im%>%
+  group_by(to)%>%
+  summarise(sum_im = sum(size))%>%
+  arrange(desc(sum_im))%>%
+  slice_head(n=5)%>%
+  rename(id = to, sum = sum_im)
+
+topcountries <- rbind(top_ex_list,top_im_list)%>%
+  distinct(id)
+```
+
+```{r}
+#edges_top_mean <- edges_mean%>%
+#  filter(from %in% topcountries$id, to %in% topcountries$id)%>%
+#  distinct(from, to, mean)%>%
+#  mutate(width = mean/10^11)
+ # mutate(from = case_when(
+ #   from %in% topcountries$id ~ from, 
+ #   TRUE ~ as.integer(0)),
+ #   to = case_when(
+ #     to %in% topcountries$id ~ to, 
+ #     TRUE ~ as.integer(0)))%>%
+
+#nodes_top <- nodes%>%
+#  filter((id %in% edges_top_mean$from) |(id %in% edges_top_mean$to))%>%
+#  rename(label = countryname)
+
+#export
+edges_top_ex <- edges_ex%>%
+  filter(from %in% topcountries$id,
+         to %in% topcountries$id)%>%
+  mutate(width = size/(5*10^10))
+
+nodes_top_ex <- edges_top_ex%>%
+  group_by(from)%>%
+  summarise(value = sum(size))%>%
+  rename(id = from)%>%
+  left_join(nodes, by= "id")%>%
+  mutate(font.size = rep(25, times = length(topcountries$id)))%>%
+  rename(label = countryname, group = continent)
+
+#import
+edges_top_im <- edges_im%>%
+  filter(to %in% topcountries$id, from  %in% topcountries$id)%>%
+  mutate(width = size/(6*10^10))
+
+nodes_top_im <- edges_top_im%>%
+  group_by(to)%>%
+  summarise(value = sum(size))%>%
+  rename(id = to)%>%
+  left_join(nodes, by= "id")%>%
+  mutate(font.size = rep(25, times = length(topcountries$id)))%>%
+  rename(label = countryname, group = continent)
+
+#all nodes
+#nodes_top_mean <- left_join(nodes_top_ex, nodes_top_im, by = "id")%>%
+#  rename(label = label.x,
+#         font.size = font.size.x)%>%
+#  mutate(value = ave(value.x, value.y))%>%
+#  select(id, label, value, font.size)
+
+#export plot top 7
+
+visNetwork(nodes_top_ex, edges_top_ex) %>% 
+  #visIgraphLayout(layout = "layout_with_sugiyama") %>%
+  visIgraphLayout(layout = "layout_in_circle") %>%
+  visEdges(
+    shadow = FALSE,
+    arrows = list(middle = list(enabled = TRUE, scaleFactor = 0.5)),
+    smooth = T,
+    color = list(color = "gray80", highlight = "blue")
+  )%>%
+  visNodes(
+    shape = "dot",
+    shadow = list(enabled = TRUE, size = 10),
+    color = list(
+      background = "white",
+      border = "gray80",
+      highlight = "blue"
+    ),
+    font = list(color="black")
+  ) %>%
+  visOptions(highlightNearest = TRUE)
+```
+
+# each continent all country plot
+```{r}
+# EU data
+eu_wo_Germany <- nodes%>%
+  filter(countryname %in% c("Austria", "Belgium", "Bulgaria", "Croatia, Rep. of", "Cyprus", "Czech Rep.", "Denmark", "Estonia, Rep. of", "Finland", "France", "Greece", "Hungary", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta", "Netherlands", "Poland, Rep. of", "Portugal", "Romania", "Czechoslovakia", "Slovenia, Rep. of", "Spain", "Sweden"))
+
+top <- nodes%>%
+  filter(countryname %in% c("China", "United States", "Germany", "Korea, Rep. of", "Japan"))
+
+wanted <- nodes%>%
+  filter(countryname %in% top$countryname | countryname %in% eu_wo_Germany$countryname)
+
+```
+
+##Asia plot visNetwork filtered
+```{r}
+#Asia plot visNetwork
+nodes_ex_Asia_list <- nodes%>%
+  filter((continent == "Asia") | (id %in% topcountries$id))
+
+edges_ex_Asia <- net2020_long_clean %>%
+  mutate(from = ifelse(direction == "import", Counterpart.Country.Code, Country.Code), to = ifelse(direction == "import", Country.Code, Counterpart.Country.Code))%>%
+  filter(direction == "export")%>%
+  filter((from %in% nodes_ex_Asia_list$id) & (to %in% nodes_ex_Asia_list$id))%>%
+#  mutate(
+#    from.a = case_when(
+#      from %in% top$id ~ from, 
+#      from %in% eu_wo_Germany$id ~ as.integer(0), #0 for eu_wo_Germany
+#      TRUE ~ as.integer(1)), # 1 for Asia
+#    to.a = case_when(
+#      to %in% top$id ~ to, 
+#      to %in% eu_wo_Germany$id ~ as.integer(0),
+#      TRUE ~ as.integer(1))
+#    )%>%
+  group_by(from, to)%>%
+  summarise(size = sum(size))%>%
+  mutate(width = size/(5*10^10))%>%
+  subset(!(from == to))
+
+nodes_ex_Asia_filter <- edges_ex_Asia%>%
+  group_by(from)%>%
+  summarise(value = sum(size))%>%
+  mutate(median = median(value))%>%
+  filter(value > 2*median)%>%
+  rename(id = from)%>%
+  left_join(nodes_ex_Asia_list, by= "id")%>%
+  rename(label = countryname, group = continent)
+
+edges_ex_Asia_filter <- edges_ex_Asia%>%
+  filter(from %in% nodes_ex_Asia_filter$id & to %in% nodes_ex_Asia_filter$id)
+
+#nodes_ex_Asia["label"][nodes_ex_Asia["id"] == as.integer(1)] <- "Asia"
+#nodes_ex_Asia["group"][nodes_ex_Asia["id"] == as.integer(1)] <- "Asia"
+#nodes_ex_Asia["label"][nodes_ex_Asia["id"] == as.integer(0)] <- "EU wo Germany"
+#nodes_ex_Asia["group"][nodes_ex_Asia["id"] == as.integer(0)] <- "Europe"
+
+visNetwork(nodes_ex_Asia_filter, edges_ex_Asia_filter) %>% 
+  #visIgraphLayout(layout = "layout_with_sugiyama") %>%
+  visIgraphLayout(layout = "layout_in_circle") %>%
+  visEdges(
+    shadow = FALSE,
+    arrows = list(middle = list(enabled = TRUE, scaleFactor = 0.5)),
+    smooth = T,
+    color = list(color = "gray80", highlight = "blue")
+  )%>%
+  visNodes(
+    shape = "dot",
+    shadow = list(enabled = TRUE, size = 10),
+    color = list(
+      background = "white",
+      border = "gray80",
+      highlight = "blue"
+    ),
+    font = list(color="black")
+  ) %>%
+  visOptions(highlightNearest = TRUE)
+```
+
+##Asia plot map
+```{r}
+# get world map
+wmap <- getMap(resolution="high")
+
+# get centroids
+centroids <- gCentroid(wmap, byid=TRUE)
+
+# get a data.frame with centroids
+centroids <- as.data.frame(centroids)
+
+centroids$name <- rownames(centroids)
+
+#write.xlsx(centroids, "/Users/hedwig/Desktop/Trade/centroids.xlsx", sheetName = "Sheet1")
+#map the dots name to coordinate name
+mapping <- read.xlsx("/Users/hedwig/Desktop/RA-Trade/centroids.xlsx", sheet = 3)
+
+nodes_map <- centroids%>%
+  right_join(y=mapping, by = "name")%>%
+  left_join(nodes, by = "countryname")%>%
+  select(countryname, id, continent, x, y)%>%
+  rename(lon=x, lat=y)
+
+maptheme <- theme(panel.grid = element_blank()) +
+  theme(axis.text = element_blank()) +
+  theme(axis.ticks = element_blank()) +
+  theme(axis.title = element_blank()) +
+  theme(legend.position = "bottom") +
+  theme(panel.grid = element_blank()) +
+  theme(panel.background = element_rect(fill = "white")) +
+  theme(plot.margin = unit(c(0, 0, 0.5, 0), 'cm'))
+
+country_shapes <- geom_polygon(aes(x = long, y = lat, group = group),
+                               data = map_data('world'),
+                               fill = "white", color = "#515151",
+                               size = 0.15)
+mapcoords <- coord_fixed(xlim = c(-150, 180), ylim = c(-55, 80))
+```
+
+```{r}
+nodes_ex_Asia_list <- nodes_map%>%
+  filter((continent == "Asia") | (id %in% topcountries$id))
+
+edges_ex_Asia <- net2020_long_clean %>%
+  mutate(from = ifelse(direction == "import", Counterpart.Country.Code, Country.Code), to = ifelse(direction == "import", Country.Code, Counterpart.Country.Code))%>%
+  filter(direction == "export")%>%
+  filter((from %in% nodes_ex_Asia_list$id) & (to %in% nodes_ex_Asia_list$id))%>%
+#  mutate(
+#    from.a = case_when(
+#      from %in% top$id ~ from, 
+#      from %in% eu_wo_Germany$id ~ as.integer(0), #0 for eu_wo_Germany
+#      TRUE ~ as.integer(1)), # 1 for Asia
+#    to.a = case_when(
+#      to %in% top$id ~ to, 
+#      to %in% eu_wo_Germany$id ~ as.integer(0),
+#      TRUE ~ as.integer(1))
+#    )%>%
+  group_by(from, to)%>%
+  summarise(size = sum(size))%>%
+  mutate(weight = size/10^10)%>%
+  subset(!(from == to))%>%
+  select(from, to, weight)
+
+nodes_ex_Asia <- edges_ex_Asia%>%
+  group_by(from)%>%
+  summarise(value = sum(weight))%>%
+#  mutate(median = median(value))%>%
+#  filter(value > median)%>%
+  rename(id = from)%>%
+  left_join(nodes_ex_Asia_list, by= "id")%>%
+  rename(label = countryname, group = continent)%>%
+  select(id, label, value, group, lon, lat)
+
+# plot map
+Asia2020 <- graph_from_data_frame(edges_ex_Asia, vertices = nodes_ex_Asia, directed = TRUE) %>% 
+  as_tbl_graph()%>%
+  activate(nodes) %>%
+  mutate(centrality = centrality_eigen())
+
+node_pos_A <- nodes_ex_Asia %>%
+  select(lon, lat) %>%
+  rename(x = lon, y = lat)   # node positions must be called x, y
+lay <- create_layout(Asia2020, 'manual', x=node_pos_A$x, y=node_pos_A$y)
+
+
+ggraph(lay) + 
+  country_shapes +
+  geom_edge_arc(aes(edge_width = weight, alpha = weight,  # draw edges as arcs
+                    circular = FALSE), curvature = 0.33, color = "grey", arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width_continuous(range = c(0.5, 3),             # scale for edge widths
+                              guide = "none") +
+  geom_node_point(aes(size = value, colour = centrality), stroke = 0.5) +
+  scale_size_continuous(range = c(1, 6), guide = FALSE) +    # scale for node sizes
+  geom_node_text(aes(label = label), repel = TRUE, size = 3,
+                 color = "black", fontface = "bold") +
+  scale_color_gradient(low = "yellow", high = "red")+
+  mapcoords + 
+  maptheme
+```
+
+```{r}
+write.xlsx(edges_ex_Asia, "edges_ex_Asia2020.xlsx", sheetName = "Sheet1", 
+  colNames = TRUE, rowNames = F, append = FALSE)
+
+write.xlsx(nodes_ex_Asia, "nodes_ex_Asia2020.xlsx", sheetName = "Sheet1", 
+  colNames = TRUE, rowNames = F, append = FALSE)
+
+```
+
+
+##Asia plot map filtered
+```{r}
+nodes_ex_Asia_list <- nodes_map%>%
+  filter((continent == "Asia") | (id %in% topcountries$id))
+
+edges_ex_Asia <- net2020_long_clean %>%
+  mutate(from = ifelse(direction == "import", Counterpart.Country.Code, Country.Code), to = ifelse(direction == "import", Country.Code, Counterpart.Country.Code))%>%
+  filter(direction == "export")%>%
+  filter((from %in% nodes_ex_Asia_list$id) & (to %in% nodes_ex_Asia_list$id))%>%
+#  mutate(
+#    from.a = case_when(
+#      from %in% top$id ~ from, 
+#      from %in% eu_wo_Germany$id ~ as.integer(0), #0 for eu_wo_Germany
+#      TRUE ~ as.integer(1)), # 1 for Asia
+#    to.a = case_when(
+#      to %in% top$id ~ to, 
+#      to %in% eu_wo_Germany$id ~ as.integer(0),
+#      TRUE ~ as.integer(1))
+#    )%>%
+  group_by(from, to)%>%
+  summarise(size = sum(size))%>%
+  mutate(weight = size/10^10)%>%
+  subset(!(from == to))%>%
+  select(from, to, weight)
+
+nodes_ex_Asia_filter <- edges_ex_Asia%>%
+  group_by(from)%>%
+  summarise(value = sum(weight))%>%
+  mutate(median = median(value))%>%
+  filter(value > 2*median)%>%
+  rename(id = from)%>%
+  left_join(nodes_ex_Asia_list, by= "id")%>%
+  rename(label = countryname, group = continent)%>%
+  select(id, label, value, group, lon, lat)
+
+edges_ex_Asia_filter <- edges_ex_Asia%>%
+  filter(from %in% nodes_ex_Asia_filter$id & to %in% nodes_ex_Asia_filter$id)
+
+# plot map
+Asia2020_filter <- graph_from_data_frame(edges_ex_Asia_filter, vertices = nodes_ex_Asia_filter, directed = TRUE) %>% 
+  as_tbl_graph()%>%
+  activate(nodes) %>%
+  mutate(centrality = centrality_eigen())
+
+node_pos_A_f <- nodes_ex_Asia_filter %>%
+  select(lon, lat) %>%
+  rename(x = lon, y = lat)   # node positions must be called x, y
+lay_f <- create_layout(Asia2020_filter, 'manual', x=node_pos_A_f$x, y=node_pos_A_f$y)
+
+
+ggraph(lay_f) + 
+  country_shapes +
+  geom_edge_arc(aes(edge_width = weight, alpha = weight,  # draw edges as arcs
+                    circular = FALSE), curvature = 0.33, color = "darkgrey", arrow = arrow(length = unit(4, 'mm')), end_cap = circle(0, 'mm')) +
+  scale_edge_width_continuous(range = c(0.5, 3),             # scale for edge widths
+                              guide = "none") +
+  geom_node_point(aes(size = value, colour = centrality), stroke = 0.5) +
+  scale_size_continuous(range = c(1, 6), guide = FALSE) +    # scale for node sizes
+  geom_node_text(aes(label = label), repel = TRUE, size = 3,
+                 color = "black", fontface = "bold") +
+  scale_color_gradient(low = "yellow", high = "red")+
+  mapcoords + 
+  maptheme
+```
+
+##Asia plot centrality 
+```{r}
+
+Asia2020 %>%
+#  activate(nodes) %>%
+#  mutate(centrality = centrality_eigen()) %>%
+#  mutate(community = as.factor(group_infomap())) %>% 
+  ggraph(layout="centrality",cent = value/10) + 
+#  ggraph(layout = coords)+
+  geom_node_point(aes(size = value, colour = centrality)) +
+  geom_edge_link(arrow = arrow(length = unit(4, 'mm')), color="darkgrey",aes( width = weight, alpha = weight)) + 
+  scale_edge_width(range = c(0.2, 2)) +
+  geom_node_text(aes(label = label), repel = TRUE) +
+  scale_color_gradient(low = "yellow", high = "red")+
+  theme_graph()
+```
+
+
+##Asia plot centrality filtered
+```{r}
+
+Asia2020_filter %>%
+#  activate(nodes) %>%
+#  mutate(centrality = centrality_eigen()) %>%
+#  mutate(community = as.factor(group_infomap())) %>% 
+  ggraph(layout="centrality",cent = value/10) + 
+#  ggraph(layout = coords)+
+  geom_node_point(aes(size = value, colour = centrality)) +
+  geom_edge_arc(arrow = arrow(length = unit(4, 'mm')), color="black",aes( width = weight, alpha = weight)) + 
+  scale_edge_width(range = c(0.2, 2)) +
+  geom_node_text(aes(label = label), repel = TRUE) +
+  scale_color_gradient(low = "yellow", high = "red")+
+  theme_graph()
+```
+
+## Asia plot clustering filtered
+```{r}
+#not good looking 
+c2 = cluster_leading_eigen(Asia2020_filter)
+coords = layout_with_fr(Asia2020_filter)
+plot(c2, Asia2020_filter, layout=coords)
+
+#group_infomap() and group_edge_betweenness() community finding not working
+
+```
+

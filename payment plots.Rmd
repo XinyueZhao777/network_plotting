@@ -1,0 +1,259 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(magrittr)
+library(dplyr)
+library(readxl)
+library(igraph)
+library(tidyverse)
+library(visNetwork)
+library(networkD3)
+library(ggraph)
+library(ggrepel)
+library(countrycode)
+library(tidygraph)
+library(rgeos)
+library(rworldmap)
+library(openxlsx)
+library(assertthat)
+library(purrr)
+library(ggplot2)
+library(ggmap)
+library(ITNr)
+```
+
+```{r}
+# Clear your workspace by removing all objects returned by ls():
+rm(list = ls()) 
+# Set the working directory to the folder containing the workshop files:
+#setwd("/Users/fil/Dropbox/Repo-haircut/Revision/relationship plots/") 
+pay_netw <- read.csv("/Users/hedwig/Dropbox/trade_payment_flows/codes/payment_codes/all_payment_link.csv", header=T,stringsAsFactors = F, na.strings = c("", "NA", "e"))#due to change in path
+
+pay_netw<-data.frame(pay_netw)
+pay_netw[is.na(pay_netw)] = 0
+
+pay_netw_long <- pay_netw%>%
+  pivot_longer(cols=8:12, 
+               names_to="currency", 
+               values_to = "value_in_currency")
+pay_netw_long[is.na(pay_netw_long)] = 0
+```
+
+```{r}
+payment_data_process <- function(netw, my_year) {
+    net2020_long <- netw%>%filter(year == my_year)
+
+    #credit to Jane Chen
+    net2020_long_clean <- net2020_long
+    net2020_long_clean$continent <- countrycode(sourcevar = net2020_long_clean[["countryname"]]
+                                      , origin = "country.name",
+                                      destination = "continent")
+
+    net2020_long_clean$counter.continent <- countrycode(sourcevar = net2020_long_clean[["counterpartcountryname"]]
+                                      , origin = "country.name",
+                                      destination = "continent")
+    #net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Aruba, Kingdom of the Netherlands"] <- "Americas"
+    #net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Aruba, Kingdom of the Netherlands"] <- "Americas"
+
+    net2020_long_clean["continent"][net2020_long_clean["countryname"] == "Belgium-Luxembourg"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["counterpartcountryname"] == "Belgium-Luxembourg"] <- "Europe"
+
+    #net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Curaçao, Kingdom of the Netherlands"] <- "Europe"
+    #net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Curaçao, Kingdom of the Netherlands"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["countryname"] == "Czechoslovakia"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["counterpartcountryname"] == "Czechoslovakia"] <- "Europe"
+
+    #net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Eastern Germany"] <- "Europe"
+    #net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Eastern Germany"] <- "Europe"
+
+    #net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Kosovo, Rep. of"] <- "Europe"
+    #net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Kosovo, Rep. of"] <- "Europe"
+
+    #net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Sint Maarten, Kingdom of the Netherlands"] <- "Europe"
+    #net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Sint Maarten, Kingdom of the Netherlands"] <- "Europe"
+
+    #net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Serbia and Montenegro"] <- "Europe"
+    #net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Serbia and Montenegro"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["countryname"] == "Yugoslavia"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["counterpartcountryname"] == "Yugoslavia"] <- "Europe"
+
+    #net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Yemen, People's Dem. Rep. of"] <- "Asia"
+    #net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Yemen, People's Dem. Rep. of"] <- "Asia"
+
+    net2020_long_clean["continent"][net2020_long_clean["countryname"] == "Yemen Arab Rep."] <- "Asia"
+    net2020_long_clean["counter.continent"][net2020_long_clean["counterpartcountryname"] == "Yemen Arab Rep."] <- "Asia"
+
+    #EasternEurope <- c("Belarus, Rep. of", "Bulgaria", "Czech Rep.", "Hungary", "Poland, Rep. of", "Moldova, Rep. of", "Romania", "Russian Federation", "Czechoslovakia", "Ukraine")
+    
+    paymentEasternEurope <- c( "Hungary", "Poland, Rep. of",  "Romania",  "Czechoslovakia")
+
+    for (i in paymentEasternEurope){
+      net2020_long_clean["continent"][net2020_long_clean["countryname"] == i] <- "Eastern Europe"
+      net2020_long_clean["counter.continent"][net2020_long_clean["counterpartcountryname"] == i] <- "Eastern Europe"
+    }
+
+    net2020_long_clean["continent"][net2020_long_clean["continent"] == "Europe"] <- "Europe(excluding Eastern Europe)"
+    net2020_long_clean["counter.continent"][net2020_long_clean["counter.continent"] == "Europe"] <- "Europe(excluding Eastern Europe)"
+
+    NorthernAmerica <- c("Bermuda", "Canada", "Greenland", "United States")
+    for (j in NorthernAmerica){
+      net2020_long_clean["continent"][net2020_long_clean["countryname"] == j] <- "North America"
+      net2020_long_clean["counter.continent"][net2020_long_clean["counterpartcountryname"] == j] <- "North America"
+    }
+
+    net2020_long_clean["continent"][net2020_long_clean["continent"] == "Americas"] <- "Americas(excluding North America)"
+    net2020_long_clean["counter.continent"][net2020_long_clean["counter.continent"] == "Americas"] <- "Americas(excluding North America)"
+      
+    return(net2020_long_clean)
+}
+
+
+
+payment_continent_process <- function(net2020_long_clean) {
+  #credit to Jane Chen
+edges_ex_continent <- net2020_long_clean %>%
+  filter(direction == "Export")%>%
+  select(continent, counter.continent, size_used, currency, value_in_currency)%>%
+  group_by(continent, counter.continent, currency) %>% 
+  summarise(size_in_currency = sum(value_in_currency))%>%
+  subset(!(continent==counter.continent))%>%
+  rename(size=size_in_currency,
+         from = continent,
+         to = counter.continent,
+         group = currency)%>%
+  mutate(width = size/10^11,
+         color = case_when(
+           group == "tradeUSD" ~ "red",
+           group == "tradeEUR" ~ "blue",
+           group == "tradeHome" ~ "yellow",
+           group == "tradeOther" ~ "black",
+           group == "tradeunidentified" ~ "green"
+         ))
+
+
+nodes_ex_continent <- edges_ex_continent%>%
+  group_by(from)%>%
+  summarise(value = sum(size)/10^11)%>%
+  rename(id = from)%>%
+  mutate(font.size = rep(25, times = 7))
+
+ledges <- data.frame(color = c("red", "blue", "yellow", "black", "green"),
+                     label = c("tradeUSD", "tradeEUR", "tradeHome", "tradeOther", "tradeunidentified"))
+
+payplot <- visNetwork(nodes_ex_continent, edges_ex_continent) %>% 
+  #visIgraphLayout() %>%
+  visIgraphLayout(layout = "layout_in_circle") %>%
+  visEdges(
+    shadow = FALSE,
+    arrows = list(middle = list(enabled = TRUE, scaleFactor = 0.5)),
+    smooth = T
+  )%>%
+  visNodes(
+    shape = "dot",
+    shadow = list(enabled = TRUE, size = 10),
+    color = list(
+      background = "black",
+      highlight = "blue"
+    ),
+    font = list(color="black", size = 2)
+  ) %>%
+  visOptions(highlightNearest = TRUE)%>%
+  visLegend(addEdges = ledges)
+
+return(payplot)
+}
+```
+
+```{r}
+year_range <- c(seq(from=1990, to=2019, by=5), 2019)
+for (year in year_range){
+  y <- payment_data_process(pay_netw_long, year)
+#  xnodes <- nodes_process(y)
+  pay_plot <- payment_continent_process(y)
+  visSave(pay_plot, file = paste0(paste0("payment_exp", year), ".html"), selfcontained = TRUE, background = "white")
+
+}
+
+```
+
+```{r}
+y <- payment_data_process(pay_netw_long, 2014)
+#  xnodes <- nodes_process(y)
+pay_plot <- payment_continent_process(y)
+visSave(pay_plot, file = paste0(paste0("payment_exp", 2014), ".html"), selfcontained = TRUE, background = "white")
+
+```
+
+```{r}
+payment_continent_process_log <- function(net2020_long_clean) {
+  #credit to Jane Chen
+edges_ex_continent <- net2020_long_clean %>%
+  filter(direction == "Export")%>%
+  select(continent, counter.continent, size_used, currency, value_in_currency)%>%
+  group_by(continent, counter.continent, currency) %>% 
+  summarise(size_in_currency = sum(value_in_currency))%>%
+  subset(!(continent==counter.continent))%>%
+  rename(size=size_in_currency,
+         from = continent,
+         to = counter.continent,
+         group = currency)%>%
+  mutate(width = log(size)/5,
+         color = case_when(
+           group == "tradeUSD" ~ "red",
+           group == "tradeEUR" ~ "blue",
+           group == "tradeHome" ~ "yellow",
+           group == "tradeOther" ~ "black",
+           group == "tradeunidentified" ~ "green"
+         ))
+
+
+nodes_ex_continent <- edges_ex_continent%>%
+  group_by(from)%>%
+  summarise(value = sum(size)/10^11)%>%
+  rename(id = from)%>%
+  mutate(font.size = rep(25, times = 7))
+
+ledges <- data.frame(color = c("red", "blue", "yellow", "black", "green"),
+                     label = c("tradeUSD", "tradeEUR", "tradeHome", "tradeOther", "tradeunidentified"))
+
+payplot <- visNetwork(nodes_ex_continent, edges_ex_continent) %>% 
+  #visIgraphLayout() %>%
+  visIgraphLayout(layout = "layout_in_circle") %>%
+  visEdges(
+    shadow = FALSE,
+    arrows = list(middle = list(enabled = TRUE, scaleFactor = 0.5)),
+    smooth = T
+  )%>%
+  visNodes(
+    shape = "dot",
+    shadow = list(enabled = TRUE, size = 10),
+    color = list(
+      background = "black",
+      highlight = "blue"
+    ),
+    font = list(color="black", size = 2)
+  ) %>%
+  visOptions(highlightNearest = TRUE)%>%
+  visLegend(addEdges = ledges)
+
+return(payplot)
+}
+```
+
+```{r}
+year_range <- c(seq(from=1990, to=2019, by=5), 2019)
+for (year in year_range){
+  y <- payment_data_process(pay_netw_long, year)
+#  xnodes <- nodes_process(y)
+  pay_plot <- payment_continent_process_log(y)
+  visSave(pay_plot, file = paste0(paste0("payment_log", year), ".html"), selfcontained = TRUE, background = "white")
+
+}
+```
+

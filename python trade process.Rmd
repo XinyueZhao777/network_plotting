@@ -1,0 +1,233 @@
+---
+title: "python trade process"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(magrittr)
+library(dplyr)
+library(readxl)
+library(igraph)
+library(tidyverse)
+library(visNetwork)
+library(networkD3)
+library(ggraph)
+library(ggrepel)
+library(countrycode)
+library(tidygraph)
+library(rgeos)
+library(rworldmap)
+library(openxlsx)
+library(assertthat)
+library(purrr)
+library(ggplot2)
+library(ggmap)
+```
+
+```{r}
+# Clear your workspace by removing all objects returned by ls():
+rm(list = ls()) 
+# Set the working directory to the folder containing the workshop files:
+#setwd("/Users/fil/Dropbox/Repo-haircut/Revision/relationship plots/") 
+netw <- read.csv("/Users/hedwig/Dropbox/trade_payment_flows/data/DOT_2021Q3_11-11-2021\ 19-20-29-72_timeSeries.csv", header=T,stringsAsFactors = F, na.strings = c("", "NA", "e"))#due to change in path
+# what does e means?
+
+netw<-data.frame(netw)
+netw[is.na(netw)] = 0
+topcountries <- c("China", "United States", "Germany", "Netherlands, The", "Japan", "Canada", "Mexico")
+```
+
+
+```{r}
+#net_year_long_clean
+data_process <- function(netw, year) {
+    net2020 <- netw[,c(1:2,4:7, year-1940)]
+    net2020_wide <- net2020 %>%
+    filter(Attribute == "Value")%>%
+    pivot_wider(names_from = Indicator.Code, values_from = paste0("X", year))
+    
+    net2020_wide[is.na(net2020_wide)] = 0
+
+    net2020_long <- net2020_wide%>%
+    mutate(import = TMG_CIF_USD + TMG_FOB_USD,
+         export = TXG_FOB_USD)%>%
+    pivot_longer(cols=10:11, 
+               names_to="direction", 
+               values_to = "size")
+    net2020_long[net2020_long == "China, P.R.: Hong Kong"] <- "China"
+    net2020_long[net2020_long == "China, P.R.: Macao"] <- "China"
+    net2020_long[net2020_long == "China, P.R.: Mainland"] <- "China"
+    net2020_long[net2020_long == "Taiwan Province of China"] <- "China"
+    net2020_long["Country.Code"][net2020_long["Country.Name"] == "China"] <- as.integer(924) 
+    net2020_long["Counterpart.Country.Code"][net2020_long["Counterpart.Country.Name"] == "China"] <- as.integer(924) 
+#no loops
+    net2020_long <- subset(net2020_long, !(Country.Name=="China" & Counterpart.Country.Name == "China"))
+    
+    #credit to Jane Chen
+    net2020_long_clean <- net2020_long %>%
+    filter(!(Country.Name %in% c("Euro Area", "Middle East and Central Asia not specified", "Emerging and Developing Asia", "Asia not specified", "Sub-Saharan Africa", "Africa", "Africa not specified", "Emerging and Developing Europe", "Middle East", "Middle East and Central Asia", "World", "Emerging Market and Developing Economies by Source of Export Earnings: Fuel", "Advanced Economies", "Emerging and Developing Economies","Emerging Market and Developing Economies by Source of Export Earnings: Nonfuel", "Western Hemisphere", "Western Hemisphere not specified", "CIS", "Countries & Areas not specified", "Special Categories", "Other Countries not included elsewhere", "Europe not specified", "European Union")))%>%
+    filter(!(Counterpart.Country.Name %in% c("Euro Area", "Middle East and Central Asia not specified", "Emerging and Developing Asia", "Asia not specified", "Sub-Saharan Africa", "Africa", "Africa not specified", "Emerging and Developing Europe", "Middle East", "Middle East and Central Asia", "World", "Emerging Market and Developing Economies by Source of Export Earnings: Fuel", "Advanced Economies", "Emerging and Developing Economies","Emerging Market and Developing Economies by Source of Export Earnings: Nonfuel", "Western Hemisphere", "Western Hemisphere not specified", "CIS", "Countries & Areas not specified", "Special Categories", "Other Countries not included elsewhere", "Europe not specified", "European Union")))
+  
+    net2020_long_clean$continent <- countrycode(sourcevar = net2020_long_clean[["Country.Name"]]
+                                      , origin = "country.name",
+                                      destination = "continent")
+
+    net2020_long_clean$counter.continent <- countrycode(sourcevar = net2020_long_clean[["Counterpart.Country.Name"]]
+                                      , origin = "country.name",
+                                      destination = "continent")
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Aruba, Kingdom of the Netherlands"] <- "Americas"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Aruba, Kingdom of the Netherlands"] <- "Americas"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Belgium-Luxembourg"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Belgium-Luxembourg"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Curaçao, Kingdom of the Netherlands"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Curaçao, Kingdom of the Netherlands"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Czechoslovakia"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Czechoslovakia"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Eastern Germany"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Eastern Germany"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Kosovo, Rep. of"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Kosovo, Rep. of"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Sint Maarten, Kingdom of the Netherlands"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Sint Maarten, Kingdom of the Netherlands"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Serbia and Montenegro"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Serbia and Montenegro"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Yugoslavia"] <- "Europe"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Yugoslavia"] <- "Europe"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Yemen, People's Dem. Rep. of"] <- "Asia"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Yemen, People's Dem. Rep. of"] <- "Asia"
+
+    net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == "Yemen Arab Rep."] <- "Asia"
+    net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == "Yemen Arab Rep."] <- "Asia"
+
+    EasternEurope <- c("Belarus, Rep. of", "Bulgaria", "Czech Rep.", "Hungary", "Poland, Rep. of", "Moldova, Rep. of", "Romania", "Russian Federation", "Czechoslovakia", "Ukraine")
+
+    for (i in EasternEurope){
+      net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == i] <- "Eastern Europe"
+      net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == i] <- "Eastern Europe"
+    }
+
+    net2020_long_clean["continent"][net2020_long_clean["continent"] == "Europe"] <- "Europe(excluding Eastern Europe)"
+    net2020_long_clean["counter.continent"][net2020_long_clean["counter.continent"] == "Europe"] <- "Europe(excluding Eastern Europe)"
+
+    NorthernAmerica <- c("Bermuda", "Canada", "Greenland", "United States")
+    for (j in NorthernAmerica){
+      net2020_long_clean["continent"][net2020_long_clean["Country.Name"] == j] <- "North America"
+      net2020_long_clean["counter.continent"][net2020_long_clean["Counterpart.Country.Name"] == j] <- "North America"
+    }
+
+    net2020_long_clean["continent"][net2020_long_clean["continent"] == "Americas"] <- "Americas(excluding North America)"
+    net2020_long_clean["counter.continent"][net2020_long_clean["counter.continent"] == "Americas"] <- "Americas(excluding North America)"
+      return(net2020_long_clean)
+}
+
+
+# nodes
+nodes_process <- function(net2020_long_clean) {
+  
+  sources <- net2020_long_clean %>%
+  select(Country.Code, Country.Name, continent)%>%
+  distinct(Country.Code, .keep_all = TRUE) %>%
+  rename(id = Country.Code)
+  destinations <- net2020_long_clean %>%
+  select(Counterpart.Country.Code, Counterpart.Country.Name, counter.continent)%>%
+  distinct(Counterpart.Country.Code, .keep_all = TRUE) %>%
+  rename(id = Counterpart.Country.Code)
+  nodes <- full_join(sources, destinations, by = "id")%>%
+  mutate(countryname = ifelse(is.na(Country.Name), Counterpart.Country.Name, Country.Name))%>%
+  select(id, countryname, continent)
+  
+  nodes_mean <- net2020_long_clean %>%
+  group_by(Country.Name)%>%
+  summarise(sum_ex_im = sum(size))%>%
+  mutate(percent = quantile(sum_ex_im, 0.5))%>%
+  filter(sum_ex_im > percent)%>%
+  rename(countryname = Country.Name)%>%
+  left_join(nodes, by= "countryname")
+
+return(nodes_mean)
+}
+
+nodes_process_all <- function(net2020_long_clean) {
+  
+  sources <- net2020_long_clean %>%
+  select(Country.Code, Country.Name, continent)%>%
+  distinct(Country.Code, .keep_all = TRUE) %>%
+  rename(id = Country.Code)
+  destinations <- net2020_long_clean %>%
+  select(Counterpart.Country.Code, Counterpart.Country.Name, counter.continent)%>%
+  distinct(Counterpart.Country.Code, .keep_all = TRUE) %>%
+  rename(id = Counterpart.Country.Code)
+  nodes <- full_join(sources, destinations, by = "id")%>%
+  mutate(countryname = ifelse(is.na(Country.Name), Counterpart.Country.Name, Country.Name))%>%
+  select(id, countryname, continent)
+  
+  nodes_mean <- net2020_long_clean %>%
+  group_by(Country.Name)%>%
+  summarise(sum_ex_im = sum(size))%>%
+  rename(countryname = Country.Name)%>%
+  left_join(nodes, by= "countryname")
+
+return(nodes_mean)
+}
+
+#export edges all
+edges_process <- function(net2020_long_clean, nodes_mean) {
+  edges_ex <- net2020_long_clean%>%
+  mutate(from = ifelse(direction == "import", Counterpart.Country.Name, Country.Name), to = ifelse(direction == "import", Country.Name, Counterpart.Country.Name))%>%
+  filter(direction == "export")%>%
+  filter(from %in% nodes_mean$countryname,
+         to %in% nodes_mean$countryname)%>%
+  group_by(from, to)%>%
+  summarise(sum_size = sum(size))%>%
+  mutate(weight = sum_size/10^11)%>%
+  mutate(percent = quantile(weight, 0.9))%>%
+  filter(weight > percent)%>%  
+  select(from, to, weight)
+
+  return(edges_ex)
+}
+
+edges_process_all <- function(net2020_long_clean, nodes_mean) {
+  edges_ex <- net2020_long_clean%>%
+  mutate(from = ifelse(direction == "import", Counterpart.Country.Name, Country.Name), to = ifelse(direction == "import", Country.Name, Counterpart.Country.Name))%>%
+  filter(direction == "export")%>%
+  group_by(from, to)%>%
+  summarise(sum_size = sum(size))%>%
+  mutate(weight = sum_size/10^11)%>%
+  mutate(percent = quantile(weight, 0.9))%>%
+  filter(weight > percent)%>%  
+  select(from, to, weight)
+
+  return(edges_ex)
+}
+
+```
+
+```{r}
+data <- data_process(netw,2020)
+nodes <- nodes_process(data)
+edges <- edges_process(data, nodes)
+```
+```{r}
+nodes_all <- nodes_process_all(data)
+edges_all <- edges_process_all(data)
+```
+
+
+```{r}
+write.xlsx(edges_all, "edges2020.xlsx", sheetName = "Sheet1", 
+  colNames = TRUE, rowNames = F, append = FALSE)
+
+write.xlsx(nodes_all, "nodes2020.xlsx", sheetName = "Sheet1", 
+  colNames = TRUE, rowNames = F, append = FALSE)
+```
